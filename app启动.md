@@ -153,16 +153,24 @@ CellLayout.java
 当手指按下时，还没有准备滚动，此时mTouchState = TOUCH_STATE_REST, 前面几个方法都return 了 false
 ```mermaid
 sequenceDiagram
-  participant Alice
-  participant Bob
-  Alice->John: Hello John, how are you?
+  participant 手指移动
+  participant WorkSpace.onInterceptTouchEvent
+  participant PagedView.onInterceptTouchEvent
+  participant mTouchSlop
+  participant ACTIVE-MOVE
+  participant 移动结束
+  手指移动->WorkSpace.onInterceptTouchEvent:
+  WorkSpace.onInterceptTouchEvent->PagedView.onInterceptTouchEvent:return false
+  PagedView.onInterceptTouchEvent->WorkSpace.determineScrollingStart:return false
+  WorkSpace.determineScrollingStart->PagedView.determineScrollingStart:
   loop Healthcheck
-      John->John: Fight against hypochondria
+      mTouchSlop->mTouchSlop:如果移动距离大于mTouchSlop则继续运行
   end
-  Note right of John: Rational thoughts <br/>prevail...
-  John-->Alice: Great!
-  John->Bob: How about you?
-  Bob-->John: Jolly good!
+  mTouchSlop->WorkSpace.onInterceptTouchEvent:return true
+  WorkSpace.onInterceptTouchEvent->PagedView.onInterceptTouchEvent:
+  PagedView.onInterceptTouchEvent->PagedView.scrollBy:
+  PagedView.scrollBy->ACTIVE-MOVE:
+  ACTIVE-MOVE->移动结束
 ```
 
 
