@@ -1,0 +1,2 @@
+## 应用启动流程
+当用户点击手机桌面某个应用的图标时，将由Launcher进程发起，通过binder发消息给System Server进程，然后System Server进程通过socket建立与zygote进程的连接，由zygote进程为目标应用创建进程
