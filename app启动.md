@@ -156,6 +156,8 @@ sequenceDiagram
   participant 手指移动
   participant WorkSpace.onInterceptTouchEvent
   participant PagedView.onInterceptTouchEvent
+  participant WorkSpace.determineScrollingStart
+  participant PagedView.determineScrollingStart
   participant mTouchSlop
   participant ACTIVE-MOVE
   participant 移动结束
@@ -164,7 +166,7 @@ sequenceDiagram
   PagedView.onInterceptTouchEvent->WorkSpace.determineScrollingStart:return false
   WorkSpace.determineScrollingStart->PagedView.determineScrollingStart:
   loop Healthcheck
-      mTouchSlop->mTouchSlop:如果移动距离大于mTouchSlop则继续运行
+      mTouchSlop->mTouchSlop:如果移动距离大于mTouchSlop则继续运行,否则再回去判断
   end
   mTouchSlop->WorkSpace.onInterceptTouchEvent:return true
   WorkSpace.onInterceptTouchEvent->PagedView.onInterceptTouchEvent:
