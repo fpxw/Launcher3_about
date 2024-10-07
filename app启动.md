@@ -10,7 +10,7 @@
 
 '''
 ### 2. 滑动原理
-Launcher桌面的整体布局大致如下图
+Launcher桌面的整体布局大致如图
 <img width="339" alt="launcher3桌面布局" src="https://github.com/user-attachments/assets/2dccd3fb-27b5-4659-ae07-b509e0fc3264">
 
 #### 手指在Launcher上滑动分为三个阶段：手指按下，手指滑动，手指离开
@@ -161,18 +161,18 @@ sequenceDiagram
   participant mTouchSlop
   participant ACTIVE-MOVE
   participant 移动结束
-  手指移动->WorkSpace.onInterceptTouchEvent: <br/>
-  WorkSpace.onInterceptTouchEvent->PagedView.onInterceptTouchEvent:return false <br/>
-  PagedView.onInterceptTouchEvent->WorkSpace.determineScrollingStart:return false <br/>
-  WorkSpace.determineScrollingStart->PagedView.determineScrollingStart: <br/>
+  手指移动->>WorkSpace.onInterceptTouchEvent: <br/>
+  WorkSpace.onInterceptTouchEvent->>PagedView.onInterceptTouchEvent:return false <br/>
+  PagedView.onInterceptTouchEvent->>WorkSpace.determineScrollingStart:return false <br/>
+  WorkSpace.determineScrollingStart->>PagedView.determineScrollingStart: <br/>
   loop Healthcheck
       mTouchSlop->mTouchSlop:如果移动距离大于mTouchSlop则继续运行,否则再回去判断 <br/>
   end
-  mTouchSlop->WorkSpace.onInterceptTouchEvent:return true <br/>
-  WorkSpace.onInterceptTouchEvent->PagedView.onInterceptTouchEvent: <br/>
-  PagedView.onInterceptTouchEvent->PagedView.scrollBy: <br/>
-  PagedView.scrollBy->ACTIVE-MOVE: <br/>
-  ACTIVE-MOVE->移动结束: <br/>
+  mTouchSlop->>WorkSpace.onInterceptTouchEvent:return true <br/>
+  WorkSpace.onInterceptTouchEvent->>PagedView.onInterceptTouchEvent: <br/>
+  PagedView.onInterceptTouchEvent->>PagedView.scrollBy: <br/>
+  PagedView.scrollBy->>ACTIVE-MOVE: <br/>
+  ACTIVE-MOVE->>移动结束: <br/>
 ```
 决定屏幕开始滑动的阈值计算：
 ```java
@@ -248,13 +248,13 @@ sequenceDiagram
   participant PagedView.computeScrollHelper
   participant PagedView.scrollTo
   participant 结束
-  手指抬起->PagedView.snapToPageWithVelocity: Y <br/>
-  PagedView.snapToPageWithVelocity->PagedView.invalidate: <br/>
-  PagedView.invalidate->PagedView.computeScroll: <br/>
-  PagedView.computeScroll->PagedView.computeScrollHelper: <br/>
-  PagedView.computeScrollHelper->PagedView.scrollTo: <br/>
-  PagedView.scrollTo->PagedView.invalidate: <br/>
-  PagedView.invalidate->结束: <br/>
+  手指抬起->>PagedView.snapToPageWithVelocity: Y <br/>
+  PagedView.snapToPageWithVelocity->>PagedView.invalidate: <br/>
+  PagedView.invalidate->>PagedView.computeScroll: <br/>
+  PagedView.computeScroll->>PagedView.computeScrollHelper: <br/>
+  PagedView.computeScrollHelper->>PagedView.scrollTo: <br/>
+  PagedView.scrollTo->>PagedView.invalidate: <br/>
+  PagedView.invalidate->>结束: <br/>
 ```
 #### 达到下面两种情况之一，都可以触发launcher滑屏事件:
    当滑动距离超过屏幕宽度的0.4倍,SIGNIFICANT_MOVE_THRESHOLD = 0.4
