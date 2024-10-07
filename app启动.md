@@ -17,7 +17,7 @@ Launcher桌面的整体布局大致如下图
 #### 2.1 手指按下-->WorkSpace.java : onInterceptTouchEvent
 
 WorkSpace.java 
-'''
+'''java
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
         switch (ev.getAction() & MotionEvent.ACTION_MASK) {
@@ -39,7 +39,7 @@ WorkSpace.java
     }
 '''
 PagedView.java 
-'''
+'''java
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
         /*
@@ -129,7 +129,7 @@ PagedView.java
     }
 '''
 CellLayout.java 
-'''
+'''java
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
         if (mUseTouchHelper || (mInterceptTouchListener != null && mInterceptTouchListener.onTouch(this, ev))) {
