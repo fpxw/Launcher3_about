@@ -161,17 +161,17 @@ sequenceDiagram
   participant mTouchSlop
   participant ACTIVE-MOVE
   participant 移动结束
-  手指移动->WorkSpace.onInterceptTouchEvent:
-  WorkSpace.onInterceptTouchEvent->PagedView.onInterceptTouchEvent:return false
-  PagedView.onInterceptTouchEvent->WorkSpace.determineScrollingStart:return false
-  WorkSpace.determineScrollingStart->PagedView.determineScrollingStart:
+  手指移动->WorkSpace.onInterceptTouchEvent: <br/>
+  WorkSpace.onInterceptTouchEvent->PagedView.onInterceptTouchEvent:return false <br/>
+  PagedView.onInterceptTouchEvent->WorkSpace.determineScrollingStart:return false <br/>
+  WorkSpace.determineScrollingStart->PagedView.determineScrollingStart: <br/>
   loop Healthcheck
-      mTouchSlop->mTouchSlop:如果移动距离大于mTouchSlop则继续运行,否则再回去判断
+      mTouchSlop->mTouchSlop:如果移动距离大于mTouchSlop则继续运行,否则再回去判断 <br/>
   end
-  mTouchSlop->WorkSpace.onInterceptTouchEvent:return true
-  WorkSpace.onInterceptTouchEvent->PagedView.onInterceptTouchEvent:
-  PagedView.onInterceptTouchEvent->PagedView.scrollBy:
-  PagedView.scrollBy->ACTIVE-MOVE:
+  mTouchSlop->WorkSpace.onInterceptTouchEvent:return true <br/>
+  WorkSpace.onInterceptTouchEvent->PagedView.onInterceptTouchEvent: <br/>
+  PagedView.onInterceptTouchEvent->PagedView.scrollBy: <br/>
+  PagedView.scrollBy->ACTIVE-MOVE: <br/>
   ACTIVE-MOVE->移动结束
 ```
 
