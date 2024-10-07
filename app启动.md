@@ -172,7 +172,7 @@ sequenceDiagram
   WorkSpace.onInterceptTouchEvent->PagedView.onInterceptTouchEvent: <br/>
   PagedView.onInterceptTouchEvent->PagedView.scrollBy: <br/>
   PagedView.scrollBy->ACTIVE-MOVE: <br/>
-  ACTIVE-MOVE->移动结束
+  ACTIVE-MOVE->移动结束: <br/>
 ```
 
 
