@@ -1,220 +1,19 @@
-::: {.header-element}
-::: {.read-progress}
-:::
-:::
-
-::: {.header-element}
-::: {.header-sidebar-menu}
-::: {style="padding-left: 1px;"}
-
-:::
-:::
-:::
-
-::: {.header-actions}
-[ []{.iconfont-archer .search-icon aria-hidden="true"}
-]{.header-search-btn .header-element .popup-trigger role="button"
-aria-label="Search" tooltip="Search"} [ [◐]{aria-hidden="true"}
-]{.header-theme-btn .header-element role="button" aria-label="Theme"
-tooltip="Theme"} [ [EN](javascript:void(0)){.lang-text}
-]{.header-lang-btn .header-element tooltip="Language"}
-:::
-
-::: {.banner}
-::: {.blog-title .header-element}
-[Android Performance](/)
-:::
-
-::: {.post-title .header-element}
-[Android Perfetto 系列 8：深入理解 Vsync 机制与性能分析](#){.post-name}
-:::
-:::
-
-::: {.donate-popup .donate-popup--hidden}
-::: {.donate-popup__title}
-Buy Me A Coffee
-:::
-
-::: {.donate-popup__content}
-::: {.donate-popup__content-description}
-如果觉得文章还不错，打赏一杯咖啡吧.
-:::
-
-![Wechat](/assets/donate-wechat.webp "Wechat"){.donate-popup__content-qrCode}
-![Alipay](/assets/donate-alipay.png "Alipay"){.donate-popup__content-qrCode}
-:::
-:::
-
-::: {.footer-fixed-btn .footer-fixed-btn--hidden .donate-btn title="Donate to the author"}
-[¥]{aria-hidden="true"}
-:::
-
-::: {.footer-fixed-btn .footer-fixed-btn--hidden .back-top}
-<div>
-
-
-
-</div>
-:::
-
-::: {.wrapper}
-::: {.site-intro style="    height:50vh;
-"}
-::: {.site-intro-placeholder}
-:::
-
-![](/intro/post-bg.jpg){.site-intro-img sizes="100vw"}
-
-::: {.site-intro-meta}
-Android Perfetto 系列 8：深入理解 Vsync 机制与性能分析 {#android-perfetto-系列-8深入理解-vsync-机制与性能分析 .intro-title}
+Android Perfetto 深入理解 Vsync 机制与性能分析
 ======================================================
 
-::: {.post-intros}
-::: {.post-intro-tags}
-[ []{.iconfont-archer .post-category-icon aria-hidden="true"} [ Android
-]{.post-category-text} ]{.post-category categories="Android"}
-[Android](javascript:void(0);){.post-tag}
-[Perfetto](javascript:void(0);){.post-tag}
-[Systrace](javascript:void(0);){.post-tag}
-[Performance](javascript:void(0);){.post-tag}
-[RenderThread](javascript:void(0);){.post-tag}
-:::
-
-::: {.post-intro-read}
-Word count: [5.8k]{.post-count .word-count}Reading time: [23
-min]{.post-count .reading-time}
-:::
-
-::: {.post-intro-meta}
-[]{.iconfont-archer .post-intro-calander}
-[2025/08/05]{.post-intro-time} [ []{.iconfont-archer .share-icon}
-[Share]{.share-text} ]{.share-wrapper}
-
--   
-    ::: {.share-qrcode}
-    :::
--   
--   
--   
--   
-:::
-:::
-:::
-:::
-
-![loading](/assets/loading.svg){.loading}
-
-::: {.container .container-unloaded}
-::: {.main .post-page role="main"}
-在 Perfetto 里看到 `vsync-app`、`vsync-sf` 和 App 的
-`doFrame`，很容易把三条轨道当成同一个时刻。这篇沿一次帧请求看 VSync
-怎样从 SurfaceFlinger 的调度进入 App，接着怎样和
-RenderThread、Buffer、FrameTimeline 对齐。
-
-示例以 120 Hz 设备为主。相位配置、是否启用硬件 VSync，以及 App
-是否请求下一帧都会改变轨道形态；本文先分清每个信号代表什么，再谈延迟。
-
-> **注：本文以 Android 17（API 37）为当前技术参照，涉及 Android 13
-> 的地方用于说明关键机制的引入；文中代码以 AOSP main
-> 的"签名对齐精简摘录"为主，少量位置使用 `...` 省略非主线逻辑，不能当成
-> Android 17 发布分支的逐行源码，请以目标分支为准。**
-
-[]{#more}
-
-[](#本文目录 "本文目录"){.headerlink}本文目录
----------------------------------------------
-
--   [系列文章目录](#%E7%B3%BB%E5%88%97%E6%96%87%E7%AB%A0%E7%9B%AE%E5%BD%95)
--   [什么是 Vsync](#%E4%BB%80%E4%B9%88%E6%98%AF-Vsync)
--   [Android 中 Vsync
-    的基本工作原理](#Android-%E4%B8%AD-Vsync-%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86)
--   [在 Perfetto 中观察
-    Vsync](#%E5%9C%A8-Perfetto-%E4%B8%AD%E8%A7%82%E5%AF%9F-Vsync)
--   [Android App 每一帧是如何基于 Vsync
-    工作的](#Android-App-%E6%AF%8F%E4%B8%80%E5%B8%A7%E6%98%AF%E5%A6%82%E4%BD%95%E5%9F%BA%E4%BA%8E-Vsync-%E5%B7%A5%E4%BD%9C%E7%9A%84)
--   [参考文档](#%E5%8F%82%E8%80%83%E6%96%87%E6%A1%A3)
--   [关于我 &&
-    博客](#%E5%85%B3%E4%BA%8E%E6%88%91-amp-amp-%E5%8D%9A%E5%AE%A2)
-
-[]{#series}
-
-[](#系列文章目录 "系列文章目录"){.headerlink}系列文章目录
-=========================================================
-
-1.  [Android Perfetto
-    系列目录](https://www.androidperformance.com/2024/03/27/Android-Perfetto-101/#/Perfetto-%E7%B3%BB%E5%88%97%E7%9B%AE%E5%BD%95)
-2.  [Android Perfetto 系列 1：Perfetto
-    工具简介](https://www.androidperformance.com/2024/05/21/Android-Perfetto-01-What-is-perfetto/)
-3.  [Android Perfetto 系列 2：Perfetto Trace
-    抓取](https://www.androidperformance.com/2024/05/21/Android-Perfetto-02-how-to-get-perfetto/)
-4.  [Android Perfetto 系列 3：熟悉 Perfetto
-    View](https://www.androidperformance.com/2024/05/21/Android-Perfetto-03-how-to-analysis-perfetto/)
-5.  [Android Perfetto 系列 4：使用命令行在本地打开超大
-    Trace](https://www.androidperformance.com/2025/02/08/Android-Perfetto-04-Open-Big-Trace-With-Command-Line/)
-6.  [Android Perfetto 系列 5：Android App 基于 Choreographer
-    的渲染流程](https://www.androidperformance.com/2025/03/26/Android-Perfetto-05-Chorergrapher/)
-7.  [Android Perfetto 系列 6：为什么是
-    120Hz？高刷新率的优势与挑战](https://www.androidperformance.com/2025/04/26/Android-Perfetto-06-Why-120Hz/)
-8.  [Android Perfetto 系列 7：MainThread 和 RenderThread
-    解读](https://www.androidperformance.com/2025/08/02/Android-Perfetto-07-MainThread-And-RenderThread/)
-9.  [Android Perfetto 系列 8：深入理解 Vsync
-    机制与性能分析](https://www.androidperformance.com/2025/08/05/Android-Perfetto-08-Vsync/)
-10. [Android Perfetto 系列 9：CPU
-    信息解读](https://www.androidperformance.com/2025/11/12/Android-Perfetto-09-CPU/)
-11. [Android Perfetto 系列 10：Binder
-    调度与锁竞争](https://www.androidperformance.com/2025/11/16/Android-Perfetto-10-Binder/)
-12. [Android Perfetto 系列 11：PerfettoSQL、Trace Processor
-    与回归检测](https://www.androidperformance.com/2026/05/04/Android-Perfetto-11-PerfettoSQL-TraceProcessor-Automation/)
-13. [Android Perfetto 系列 12：Trace
-    数据流与丢失排查](https://www.androidperformance.com/2026/05/04/Android-Perfetto-12-Trace-Dataflow-And-Loss/)
-14. [Android Perfetto 系列 13：Perfetto SDK、Track Event 与 App 现场
-    Trace](https://www.androidperformance.com/2026/05/04/Android-Perfetto-13-Track-Event-SDK/)
-15. [Android Perfetto 系列 14：heapprofd 与内存
-    Profiling](https://www.androidperformance.com/2026/05/04/Android-Perfetto-14-Native-Heap-Heapprofd/)
-16. [Android Perfetto 系列 15：Boot Trace、长时间现场 Trace
-    与偶发问题抓取](https://www.androidperformance.com/2026/05/04/Android-Perfetto-15-Boot-And-Long-Running-Field-Tracing/)
-17. [Android Perfetto 系列 16：GPU、Power Counters
-    与硬件瓶颈分析](https://www.androidperformance.com/2026/05/04/Android-Perfetto-16-GPU-Power-Counters/)
-18. [Android Perfetto 系列
-    17：专项场景自动化、问题清单与平台体系](https://www.androidperformance.com/2026/05/04/Android-Perfetto-17-Engineering-Domain-And-Platform-Tracing/)
-19. [Android Perfetto 系列
-    18：响应速度实战，从输入事件到首帧反馈](https://www.androidperformance.com/2026/05/04/Android-Perfetto-18-Input-Response-Latency/)
-20. [视频(B站) - Android Perfetto
-    基础和案例分享](https://www.bilibili.com/video/BV1oi82efE4D/?vd_source=0c6d2191e785de0a36dc21a9da7e664e)
-21. [视频(B站) - Android Perfetto 分享 -
-    出图类型分享：AOSP、WebView、Flutter + OEM
-    系统优化分享](https://www.bilibili.com/video/BV17A6bBLECu/)
-
-如果大家还没看过 Systrace 系列，下面是传送门：
-
-1.  [Systrace
-    系列目录](https://www.androidperformance.com/2019/05/26/Android_Systrace_0/#/%E7%B3%BB%E5%88%97%E6%96%87%E7%AB%A0%E7%9B%AE%E5%BD%95)
-    ： 系统介绍了 Perfetto 的前身 Systrace 的使用，并通过 Systrace
-    来学习和了解 Android 性能优化和 Android 系统运行的基本规则。
-2.  [个人博客](https://www.androidperformance.com/) ：个人博客，主要是
-    Android 相关的内容，也放了一些生活和工作相关的内容。
-
-欢迎大家在 [关于我](https://www.androidperformance.com/about/)
-页面加入微信群或者星球，讨论你的问题、你最想看到的关于 Perfetto
-的部分，以及跟各位群友讨论所有 Android 开发相关的内容
-
-[]{#what-is-vsync}
-
-[](#什么是-Vsync "什么是 Vsync"){.headerlink}什么是 Vsync {#什么是-Vsync}
+## 什么是-Vsync
 ---------------------------------------------------------
 
-VSync（Vertical
-Synchronization，垂直同步）给帧生产和显示合成提供共同的时间参考。App、SurfaceFlinger
+VSync（Vertical Synchronization，垂直同步）给帧生产和显示合成提供共同的时间参考。App、SurfaceFlinger
 与显示硬件会按各自的调度相位工作，不能把它们画成同一个瞬间。
 
 在没有 Vsync 机制之前，常见问题是屏幕撕裂（Screen
 Tearing）。当显示器读取 framebuffer 的同时，GPU
 写入了下一帧，就会在同一次刷新中出现上下两部分不一致的画面。
 
-### [](#Vsync-解决什么问题？ "Vsync 解决什么问题？"){.headerlink}Vsync 解决什么问题？ {#Vsync-解决什么问题？}
+###  Vsync-解决什么问题？
 
-Android 用 VSync 安排帧回调和合成时点，再用 BufferQueue 与 fence
-协调读写：
+Android 用 VSync 安排帧回调和合成时点，再用 BufferQueue 与 fence 协调读写：
 
 1.  **显示节拍**：显示硬件提供刷新周期信息，系统也可以根据硬件反馈预测后续时点。
 2.  **App 回调**：有待处理帧时，Choreographer 请求
@@ -228,15 +27,13 @@ Android 用 VSync 安排帧回调和合成时点，再用 BufferQueue 与 fence
 的帧可能在更早的周期开始，也可能错过当前预期呈现时点；是否晚呈现要用
 FrameTimeline 和合成侧记录判断，不能只看 `queueBuffer` 的时间。
 
-[]{#principle}
 
-[](#Android-中-Vsync-的基本工作原理 "Android 中 Vsync 的基本工作原理"){.headerlink}Android 中 Vsync 的基本工作原理 {#Android-中-Vsync-的基本工作原理}
-------------------------------------------------------------------------------------------------------------------
-
+## Android-中-Vsync-的基本工作原理
+-----------------------------------------------------------------------------------------------------------------
 Android 系统的 Vsync
 实现比基本概念复杂得多，需要考虑多个不同的渲染组件，以及它们之间的协调工作。
 
-### [](#Vsync-信号的分层架构 "Vsync 信号的分层架构"){.headerlink}Vsync 信号的分层架构 {#Vsync-信号的分层架构}
+### Vsync-信号的分层架构
 
 在 Android 系统中，并不是只有一个简单的 Vsync
 信号。系统维护着多个不同用途的 Vsync 信号：
@@ -258,24 +55,6 @@ Vsync，大部分时间使用软件预测的方式生成 Vsync 信号。
 更新时（比如用户触摸、动画运行、界面滚动等），应用会向系统申请接收
 Vsync-app 信号。
 
-+-----------------------------------+-----------------------------------+
-|     1                             |     // frameworks/base/core/jav   |
-|     2                             | a/android/view/Choreographer.java |
-|     3                             |     private voi                   |
-|     4                             | d scheduleFrameLocked(long now) { |
-|     5                             |         if (!mFrameScheduled) {   |
-|     6                             |                                   |
-|     7                             |           mFrameScheduled = true; |
-|     8                             |             if (USE_VSYNC) {      |
-|     9                             |                                   |
-|     10                            |    // 向系统申请下一个 Vsync 信号 |
-|                                   |                 mDisp             |
-|                                   | layEventReceiver.scheduleVsync(); |
-|                                   |             }                     |
-|                                   |         }                         |
-|                                   |     }                             |
-+-----------------------------------+-----------------------------------+
-
 Vsync-app
 是按需申请的。如果应用界面是静态的，没有任何动画或用户交互，那么应用不会申请
 Vsync-app 信号，系统也就不会为这个应用生成 Vsync 事件。
@@ -291,9 +70,8 @@ SurfaceFlinger 又服务部分 Choreographer
 客户端带来的时序歧义，系统将两类职责分离：`vsync-sf` 专注唤醒
 SurfaceFlinger，`vsync-appSf` 面向需要与 SurfaceFlinger 同步的客户端。
 
-[]{#perfetto-observe}
 
-[](#在-Perfetto-中观察-Vsync "在 Perfetto 中观察 Vsync"){.headerlink}在 Perfetto 中观察 Vsync {#在-Perfetto-中观察-Vsync}
+## 在-Perfetto-中观察-Vsync
 ---------------------------------------------------------------------------------------------
 
 Perfetto trace 中包含多个与 Vsync 相关的 Track，理解这些 Track
@@ -305,22 +83,19 @@ Perfetto trace 中包含多个与 Vsync 相关的 Track，理解这些 Track
     这份 Trace 中该 counter 在 0 和 1
     之间变化，可用变化时点辅助观察调度节奏。它不是某个指定 App
     已收到回调的证明。\
-    ![image-20250811221826847](/images/Android-Perfetto-08-Vsync/image-20250811221826847.webp)
-
+    <img width="2102" height="156" alt="image" src="https://github.com/user-attachments/assets/2a3f1d6b-6887-48bf-9616-91b31fd62531" />
 2.  **vsync-sf**\
     显示 SurfaceFlinger Vsync 信号状态。无 Vsync Offset 时与 `vsync-app`
     同步变化。\
-    ![image-20250811221902646](/images/Android-Perfetto-08-Vsync/image-20250811221902646.webp)
-
+    <img width="2022" height="258" alt="image" src="https://github.com/user-attachments/assets/e185a7a9-911e-400e-b6a6-0d4724aca2c3" />
 3.  **vsync-appSf**\
     Android 13+ 新增，服务于需要与 SurfaceFlinger 同步的特殊
     Choreographer 客户端。\
-    ![image-20250811222036489](/images/Android-Perfetto-08-Vsync/image-20250811222036489.webp)
-
+    <img width="2200" height="280" alt="image" src="https://github.com/user-attachments/assets/a5b598d7-43e3-449e-992d-eab51f4dbe20" />
 4.  **HW\_VSYNC**\
     这条 counter 记录硬件 VSync 的启用状态，值为 1/0
     时分别表示开启/关闭。不要把每次状态变化当成一次 App 帧回调。\
-    ![image-20250811222159253](/images/Android-Perfetto-08-Vsync/image-20250811222159253.webp)
+    <img width="1832" height="332" alt="image" src="https://github.com/user-attachments/assets/35fcfeda-0778-4330-8e44-19630b150e57" />
 
 **在应用进程中**：
 
@@ -328,33 +103,27 @@ Perfetto trace 中包含多个与 Vsync 相关的 Track，理解这些 Track
 显示应用接收 Vsync 信号的时间点。该事件连接通过 Binder 建链、通过
 `BitTube`/Looper 通道分发事件，时间可能略晚于 SurfaceFlinger 中的
 `vsync-app`。
-
-![image-20250918220632473](/images/Android-Perfetto-08-Vsync/image-20250918220632473.webp)
+<img width="2630" height="504" alt="image" src="https://github.com/user-attachments/assets/73048b1a-9dd6-4c17-a602-43aef9b1b1f8" />
 
 `UI Thread` Slice Track：\
 包含 `Choreographer#doFrame` 及相关的 Input、Animation、Traversal 等
 Slice。每个 `doFrame` 对应一帧的处理工作。
-
-![image-20250918220709655](/images/Android-Perfetto-08-Vsync/image-20250918220709655.webp)
+<img width="2660" height="552" alt="image" src="https://github.com/user-attachments/assets/1283dc19-d528-42c3-bce9-8f51e070bdbd" />
 
 `RenderThread` Slice Track：\
 包含 `DrawFrame`、`syncAndDrawFrame`、`queueBuffer` 等
 Slice，对应渲染线程工作。
+<img width="2262" height="356" alt="image" src="https://github.com/user-attachments/assets/2d8cbe55-aa00-4dd9-90c2-6888126aeb08" />
 
-![image-20250918220730872](/images/Android-Perfetto-08-Vsync/image-20250918220730872.webp)
-
-[]{#app-frames}
-
-[](#Android-App-每一帧是如何基于-Vsync-工作的 "Android App 每一帧是如何基于 Vsync 工作的"){.headerlink}Android App 每一帧是如何基于 Vsync 工作的 {#Android-App-每一帧是如何基于-Vsync-工作的}
+## Android-App-每一帧是如何基于-Vsync-工作的
 ------------------------------------------------------------------------------------------------------------------------------------------------
 
 下图把 App 请求回调、主线程执行和 SurfaceFlinger
 合成放在一条时间线上。不同帧可能跳过某些阶段，图中箭头表示调查顺序，不表示所有工作都在一个
 VSync 周期内完成。
+<img width="2508" height="2002" alt="image" src="https://github.com/user-attachments/assets/18c6876d-5a69-4560-a74e-6f79484459fc" />
 
-![image-20250918221821265](/images/Android-Perfetto-08-Vsync/image-20250918221821265.webp)
-
-### [](#流程总览（按顺序） "流程总览（按顺序）"){.headerlink}流程总览（按顺序） {#流程总览（按顺序）}
+### 流程总览（按顺序）
 
 1.  触发重绘/输入：`View.invalidate()`、动画、数据变化或输入事件触发 →
     `ViewRootImpl.scheduleTraversals()` →
@@ -374,7 +143,7 @@ VSync 周期内完成。
 
 下面分别展开每一步的关键实现与 Perfetto 观测点。
 
-### [](#App-什么时候会申请-Vsync-信号 "App 什么时候会申请 Vsync 信号"){.headerlink}App 什么时候会申请 Vsync 信号 {#App-什么时候会申请-Vsync-信号}
+### App-什么时候会申请-Vsync-信号
 
 应用并不是时刻都在申请 Vsync 信号的。Vsync
 信号是按需申请的，只有在以下情况下，应用才会向系统申请下一个 Vsync：
@@ -386,7 +155,7 @@ VSync 周期内完成。
 3.  **用户交互**：触摸事件、按键事件等需要 UI 响应时
 4.  **数据变化**：RecyclerView 数据更新、TextView 文本改变等
 
-### [](#App-申请-Vsync-的完整流程 "App 申请 Vsync 的完整流程"){.headerlink}App 申请 Vsync 的完整流程 {#App-申请-Vsync-的完整流程}
+### App-申请-Vsync-的完整流程
 
 当应用需要更新 UI 时，会通过以下流程申请 Vsync 信号：
 
@@ -476,7 +245,7 @@ VSync 周期内完成。
 > `TRAVERSAL` 仍然是最常见触发源，但从 AOSP main 实现看，并非"只有
 > TRAVERSAL 才申请 Vsync"。
 
-### [](#主线程如何监听-Vsync-信号 "主线程如何监听 Vsync 信号"){.headerlink}主线程如何监听 Vsync 信号 {#主线程如何监听-Vsync-信号}
+### 主线程如何监听-Vsync-信号
 
 应用主线程通过 `DisplayEventReceiver` 来监听 Vsync
 信号。这个过程涉及几个关键步骤：
@@ -1013,717 +782,3 @@ App 和 SurfaceFlinger 都有 FrameTimeline
 -   其他前台应用/系统服务是否占用关键资源\
     ![image-20250918223532482](/images/Android-Perfetto-08-Vsync/image-20250918223532482.webp)
 
-[]{#refs}
-
-[](#参考文档 "参考文档"){.headerlink}参考文档
----------------------------------------------
-
-1.  [Android Graphics
-    Architecture](https://source.android.com/docs/core/graphics)
-2.  [VSYNC Implementation
-    Guide](https://source.android.com/docs/core/graphics/implement-vsync)
-3.  [Frame
-    Pacing](https://source.android.com/docs/core/graphics/frame-pacing)
-4.  [Perfetto Documentation](https://perfetto.dev/docs/)
-5.  [Android Perfetto 系列 5：Android App 基于 Choreographer
-    的渲染流程](https://www.androidperformance.com/2025/03/26/Android-Perfetto-05-Chorergrapher/)
-6.  [Android Perfetto 系列 6：为什么是
-    120Hz？高刷新率的优势与挑战](https://www.androidperformance.com/2025/04/26/Android-Perfetto-06-Why-120Hz/)
-7.  [Vsync offset
-    相关技术分析](https://cloud.tencent.com/developer/article/1905184)
-8.  [Android
-    13/14高版本SurfaceFlinger出现VSYNC-app/VSYNC-appSf/VSYNC-sf剖析](https://blog.csdn.net/learnframework/article/details/133964332)
-9.  [AOSP -
-    Choreographer.java（main）](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/android/view/Choreographer.java)
-10. [AOSP -
-    android\_view\_DisplayEventReceiver.cpp（main）](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/jni/android_view_DisplayEventReceiver.cpp)
-11. [AOSP -
-    DisplayEventDispatcher.h（main）](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/libs/gui/include/gui/DisplayEventDispatcher.h)
-12. [AOSP -
-    DisplayEventReceiver.cpp（main）](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/libs/gui/DisplayEventReceiver.cpp)
-13. [AOSP -
-    VSyncDispatch.h（main）](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/services/surfaceflinger/Scheduler/VSyncDispatch.h)
-14. [AOSP -
-    EventThread.cpp（main）](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/services/surfaceflinger/Scheduler/EventThread.cpp)
-15. [Android
-    Multi-display（官方文档）](https://source.android.com/docs/core/display/multi_display/three-hardware-displays)
-16. [AOSP -
-    VsyncConfiguration.h（main）](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/services/surfaceflinger/Scheduler/VsyncConfiguration.h)
-17. [AOSP -
-    DisplayEventDispatcher.cpp（main）](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/libs/gui/DisplayEventDispatcher.cpp)
-18. [Unsignaled buffer
-    latch（官方文档）](https://source.android.com/docs/core/graphics/unsignaled-buffer-latch)
-
-[]{#about}
-
-[](#关于我-amp-amp-博客 "关于我 && 博客"){.headerlink}关于我 && 博客 {#关于我-amp-amp-博客}
-====================================================================
-
-下面是个人的介绍和相关的链接，期望与同行的各位多多交流，三人行，则必有我师!
-
-1.  [博主个人介绍](https://www.androidperformance.com/about/)
-    ：里面有个人的微信和微信群链接。
-2.  [本博客内容导航](https://www.androidperformance.com/2019/12/01/BlogMap/)
-    ：个人博客内容的一个导航。
-3.  [个人整理和搜集的优秀博客文章 - Android
-    性能优化必知必会](https://androidperformance.com/2018/05/07/Android-performance-optimization-skills-and-tools/)
-    ：欢迎大家自荐和推荐 （微信私聊即可）
-4.  [Android性能优化知识星球](https://www.androidperformance.com/2023/12/30/the-performance/)
-    ： 欢迎加入，多谢支持～
-
-> **一个人可以走的更快 , 一群人可以走的更远**
-
-![微信扫一扫](/images/WechatIMG581.webp)
-
-::: {.license-wrapper}
-Author：[Gracker](https://androidperformance.com)
-
-Link：<https://androidperformance.com/2025/08/05/Android-Perfetto-08-Vsync/>
-
-Publish date：[August 5th 2025, 10:15:30
-am](https://androidperformance.com/2025/08/05/Android-Perfetto-08-Vsync/)
-
-Update date：[October 6th 2026, 7:48:39
-pm](https://androidperformance.com/2025/08/05/Android-Perfetto-08-Vsync/)
-
-License：本文采用[知识共享署名-非商业性使用 4.0
-国际许可协议](http://creativecommons.org/licenses/by-nc/4.0/)进行许可
-:::
-
--   ::: {.nextSlogan}
-    Next Post
-    :::
-
-    [](/2025/11/12/Android-Perfetto-09-CPU/ "Android Perfetto 系列 9：CPU 信息解读")
-    ::: {.nextTitle}
-    Android Perfetto 系列 9：CPU 信息解读
-    :::
-
--   ::: {.prevSlogan}
-    Previous Post
-    :::
-
-    [](/2025/08/02/Android-Perfetto-07-MainThread-And-RenderThread/ "Android Perfetto 系列 7：MainThread 和 RenderThread 解读")
-    ::: {.prevTitle}
-    Android Perfetto 系列 7：MainThread 和 RenderThread 解读
-    :::
-
-::: {.post-comment}
-:::
-:::
-:::
-
-::: {.social}
-[](mailto:Dreamtale.jg@gmail.com "email"){.iconfont-archer .email}
-[](https://github.com/gracker "github"){.iconfont-archer .github} [
-![](/assets/Wechat.jpeg){.profile-qr} ]{.iconfont-archer .wechat
-title="wechat"} [ ]{.iconfont-archer .qq title="qq: 553000664"}
-[](https://weibo.com/gracker520 "weibo"){.iconfont-archer .weibo}
-[](https://www.zhihu.com/people/gracker "zhihu"){.iconfont-archer
-.zhihu} [](https://twitter.com/Gracker_Gao "twitter"){.iconfont-archer
-.twitter}
-[](https://juejin.im/user/557b0590e4b052e031453d76 "juejin"){.iconfont-archer
-.juejin} [](/atom.xml "rss"){.iconfont-archer .rss}
-:::
-
-::: {.copyright}
-[Powered by [Hexo](https://hexo.io/)]{#hexo-power}[]{.iconfont-archer
-.power}[theme
-[Archer](https://github.com/fi3ework/hexo-theme-archer)]{#theme-info}
-:::
-
-::: {.website-approve}
-[ [蜀 ICP 备 20016190 号](https://beian.miit.gov.cn/) ]{#icp-approve
-.icp-approve}
-:::
-:::
-
-::: {.toc-wrapper .toc-wrapper-loding style="top:50vh;"}
-::: {.toc-catalog}
-[]{.iconfont-archer .catalog-icon}CATALOG
-:::
-
-1.  [[1.]{.toc-number}
-    [本文目录]{.toc-text}](#%E6%9C%AC%E6%96%87%E7%9B%AE%E5%BD%95){.toc-link}
-
-[[]{.toc-number}
-[系列文章目录]{.toc-text}](#%E7%B3%BB%E5%88%97%E6%96%87%E7%AB%A0%E7%9B%AE%E5%BD%95){.toc-link}
-
-1.  [[1.]{.toc-number} [什么是
-    Vsync]{.toc-text}](#%E4%BB%80%E4%B9%88%E6%98%AF-Vsync){.toc-link}
-    1.  [[1.1.]{.toc-number} [Vsync
-        解决什么问题？]{.toc-text}](#Vsync-%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98%EF%BC%9F){.toc-link}
-2.  [[2.]{.toc-number} [Android 中 Vsync
-    的基本工作原理]{.toc-text}](#Android-%E4%B8%AD-Vsync-%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86){.toc-link}
-    1.  [[2.1.]{.toc-number} [Vsync
-        信号的分层架构]{.toc-text}](#Vsync-%E4%BF%A1%E5%8F%B7%E7%9A%84%E5%88%86%E5%B1%82%E6%9E%B6%E6%9E%84){.toc-link}
-3.  [[3.]{.toc-number} [在 Perfetto 中观察
-    Vsync]{.toc-text}](#%E5%9C%A8-Perfetto-%E4%B8%AD%E8%A7%82%E5%AF%9F-Vsync){.toc-link}
-4.  [[4.]{.toc-number} [Android App 每一帧是如何基于 Vsync
-    工作的]{.toc-text}](#Android-App-%E6%AF%8F%E4%B8%80%E5%B8%A7%E6%98%AF%E5%A6%82%E4%BD%95%E5%9F%BA%E4%BA%8E-Vsync-%E5%B7%A5%E4%BD%9C%E7%9A%84){.toc-link}
-    1.  [[4.1.]{.toc-number}
-        [流程总览（按顺序）]{.toc-text}](#%E6%B5%81%E7%A8%8B%E6%80%BB%E8%A7%88%EF%BC%88%E6%8C%89%E9%A1%BA%E5%BA%8F%EF%BC%89){.toc-link}
-    2.  [[4.2.]{.toc-number} [App 什么时候会申请 Vsync
-        信号]{.toc-text}](#App-%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%BC%9A%E7%94%B3%E8%AF%B7-Vsync-%E4%BF%A1%E5%8F%B7){.toc-link}
-    3.  [[4.3.]{.toc-number} [App 申请 Vsync
-        的完整流程]{.toc-text}](#App-%E7%94%B3%E8%AF%B7-Vsync-%E7%9A%84%E5%AE%8C%E6%95%B4%E6%B5%81%E7%A8%8B){.toc-link}
-    4.  [[4.4.]{.toc-number} [主线程如何监听 Vsync
-        信号]{.toc-text}](#%E4%B8%BB%E7%BA%BF%E7%A8%8B%E5%A6%82%E4%BD%95%E7%9B%91%E5%90%AC-Vsync-%E4%BF%A1%E5%8F%B7){.toc-link}
-    5.  [[4.5.]{.toc-number}
-        [几个遗留问题]{.toc-text}](#%E5%87%A0%E4%B8%AA%E9%81%97%E7%95%99%E9%97%AE%E9%A2%98){.toc-link}
-    6.  [[4.6.]{.toc-number} [Vsync Offset / WorkDuration
-        的技术实现]{.toc-text}](#Vsync-Offset-x2F-WorkDuration-%E7%9A%84%E6%8A%80%E6%9C%AF%E5%AE%9E%E7%8E%B0){.toc-link}
-    7.  [[4.7.]{.toc-number}
-        [相位差的简化时序示意]{.toc-text}](#%E7%9B%B8%E4%BD%8D%E5%B7%AE%E7%9A%84%E7%AE%80%E5%8C%96%E6%97%B6%E5%BA%8F%E7%A4%BA%E6%84%8F){.toc-link}
-5.  [[5.]{.toc-number} [Vsync
-    信号的完整代码流程]{.toc-text}](#Vsync-%E4%BF%A1%E5%8F%B7%E7%9A%84%E5%AE%8C%E6%95%B4%E4%BB%A3%E7%A0%81%E6%B5%81%E7%A8%8B){.toc-link}
-    1.  [[5.1.]{.toc-number} [按 AOSP main
-        分支对齐的关键代码（精简摘录）]{.toc-text}](#%E6%8C%89-AOSP-main-%E5%88%86%E6%94%AF%E5%AF%B9%E9%BD%90%E7%9A%84%E5%85%B3%E9%94%AE%E4%BB%A3%E7%A0%81%EF%BC%88%E7%B2%BE%E7%AE%80%E6%91%98%E5%BD%95%EF%BC%89){.toc-link}
-    2.  [[5.2.]{.toc-number}
-        [关键时序点分析]{.toc-text}](#%E5%85%B3%E9%94%AE%E6%97%B6%E5%BA%8F%E7%82%B9%E5%88%86%E6%9E%90){.toc-link}
-    3.  [[5.3.]{.toc-number}
-        [FrameTimeline]{.toc-text}](#FrameTimeline){.toc-link}
-    4.  [[5.4.]{.toc-number} [刷新率/显示模式/VRR 对 Vsync 与
-        Offset/预测的影响]{.toc-text}](#%E5%88%B7%E6%96%B0%E7%8E%87-x2F-%E6%98%BE%E7%A4%BA%E6%A8%A1%E5%BC%8F-x2F-VRR-%E5%AF%B9-Vsync-%E4%B8%8E-Offset-x2F-%E9%A2%84%E6%B5%8B%E7%9A%84%E5%BD%B1%E5%93%8D){.toc-link}
-    5.  [[5.5.]{.toc-number} [Perfetto 实战
-        Checklist（建议按序查看）]{.toc-text}](#Perfetto-%E5%AE%9E%E6%88%98-Checklist%EF%BC%88%E5%BB%BA%E8%AE%AE%E6%8C%89%E5%BA%8F%E6%9F%A5%E7%9C%8B%EF%BC%89){.toc-link}
-6.  [[6.]{.toc-number}
-    [参考文档]{.toc-text}](#%E5%8F%82%E8%80%83%E6%96%87%E6%A1%A3){.toc-link}
-
-[[]{.toc-number} [关于我 &&
-博客]{.toc-text}](#%E5%85%B3%E4%BA%8E%E6%88%91-amp-amp-%E5%8D%9A%E5%AE%A2){.toc-link}
-:::
-
-::: {.sidebar .sidebar-hide}
--   []{.iconfont-archer}[Archive]{.tab-name}
--   []{.iconfont-archer}[Tag]{.tab-name}
--   []{.iconfont-archer}[Cate]{.tab-name}
-
-::: {.sidebar-content .sidebar-content-show-archive}
-::: {.sidebar-panel-archives}
-::: {.total-and-search}
-::: {.total-archive}
-Total : 140
-:::
-:::
-
-::: {.post-archive}
-::: {.archive-year}
-2026
-:::
-
--   [10/06]{.archive-post-date} [SmartPerfetto v1.15.1
-    更新说明](/2026/10/06/SmartPerfetto-v1.15.1-Release-Notes/){.archive-post-title}
--   [09/19]{.archive-post-date} [SmartPerfetto v1.12.0
-    更新说明](/2026/09/19/SmartPerfetto-v1.12.0-Release-Notes/){.archive-post-title}
--   [09/19]{.archive-post-date} [耗时大半年，开源一本 Android
-    电子书《Android
-    技术内幕：系统机制、性能优化与工具实战》](/2026/09/19/AIW-Open-Source-Android-Internals-Wiki/){.archive-post-title}
--   [08/21]{.archive-post-date} [SmartPerfetto v1.7.0
-    更新说明](/2026/08/21/SmartPerfetto-Five-Week-Update/){.archive-post-title}
--   [07/17]{.archive-post-date} [SmartPerfetto v1.1.1
-    更新说明](/2026/07/17/SmartPerfetto-Six-Week-Update/){.archive-post-title}
--   [06/04]{.archive-post-date} [SmartPerfetto v1.0.28
-    更新说明](/2026/06/04/SmartPerfetto-Three-Week-Update/){.archive-post-title}
--   [05/17]{.archive-post-date} [SmartPerfetto v1.0.7
-    更新说明](/2026/05/17/SmartPerfetto-Two-Week-Update/){.archive-post-title}
--   [05/05]{.archive-post-date}
-    [我做了什么](/2026/05/05/What-I-Am-Building/){.archive-post-title}
--   [05/04]{.archive-post-date} [Android Perfetto 系列
-    18：响应速度实战，从输入事件到首帧反馈](/2026/05/04/Android-Perfetto-18-Input-Response-Latency/){.archive-post-title}
--   [05/04]{.archive-post-date} [Android Perfetto 系列
-    17：专项场景自动化、问题清单与平台体系](/2026/05/04/Android-Perfetto-17-Engineering-Domain-And-Platform-Tracing/){.archive-post-title}
--   [05/04]{.archive-post-date} [Android Perfetto 系列 16：GPU、Power
-    Counters
-    与硬件瓶颈分析](/2026/05/04/Android-Perfetto-16-GPU-Power-Counters/){.archive-post-title}
--   [05/04]{.archive-post-date} [Android Perfetto 系列 15：Boot
-    Trace、长时间现场 Trace
-    与偶发问题抓取](/2026/05/04/Android-Perfetto-15-Boot-And-Long-Running-Field-Tracing/){.archive-post-title}
--   [05/04]{.archive-post-date} [Android Perfetto 系列 14：heapprofd
-    与内存
-    Profiling](/2026/05/04/Android-Perfetto-14-Native-Heap-Heapprofd/){.archive-post-title}
--   [05/04]{.archive-post-date} [Android Perfetto 系列 13：Perfetto
-    SDK、Track Event 与 App 现场
-    Trace](/2026/05/04/Android-Perfetto-13-Track-Event-SDK/){.archive-post-title}
--   [05/04]{.archive-post-date} [Android Perfetto 系列 12：Trace
-    数据流与丢失排查](/2026/05/04/Android-Perfetto-12-Trace-Dataflow-And-Loss/){.archive-post-title}
--   [05/04]{.archive-post-date} [Android Perfetto 系列
-    11：PerfettoSQL、Trace Processor
-    与回归检测](/2026/05/04/Android-Perfetto-11-PerfettoSQL-TraceProcessor-Automation/){.archive-post-title}
--   [04/29]{.archive-post-date} [SmartPerfetto 开源：面向 Android Trace
-    分析的 Perfetto AI
-    Assistant](/2026/04/29/SmartPerfetto-Open-Source-Perfetto-AI-Assistant/){.archive-post-title}
--   [04/28]{.archive-post-date} [万字长文推演：手机不再从 App
-    开始，Agent OS
-    如何接管任务入口](/2026/04/28/Agent-OS-Task-Entry/){.archive-post-title}
--   [04/10]{.archive-post-date} [SmartPerfetto 架构文章 Q&A：8
-    个深度技术问答](/2026/04/10/SmartPerfetto-Architecture-Deep-Dive-QA/){.archive-post-title}
--   [04/10]{.archive-post-date} [从 Trace 到洞察：SmartPerfetto AI Agent
-    的 Harness Engineering
-    实战](/2026/04/10/SmartPerfetto-Architecture-Deep-Dive/){.archive-post-title}
--   [03/10]{.archive-post-date} [OpenClaw 常见问题解答：Token
-    消耗、能干什么、本地模型、隐私安全、使用体验](/2026/03/10/OpenClaw-FAQ/){.archive-post-title}
--   [03/08]{.archive-post-date} [我把 OpenClaw
-    跑在本地三周后，发现它根本不是聊天机器人](/2026/03/08/OpenClaw-Local-Practice/){.archive-post-title}
-
-::: {.archive-year}
-2025
-:::
-
--   [11/16]{.archive-post-date} [Android Perfetto 系列 10：Binder
-    调度与锁竞争](/2025/11/16/Android-Perfetto-10-Binder/){.archive-post-title}
--   [11/12]{.archive-post-date} [Android Perfetto 系列 9：CPU
-    信息解读](/2025/11/12/Android-Perfetto-09-CPU/){.archive-post-title}
--   [08/05]{.archive-post-date} [Android Perfetto 系列 8：深入理解 Vsync
-    机制与性能分析](/2025/08/05/Android-Perfetto-08-Vsync/){.archive-post-title}
--   [08/02]{.archive-post-date} [Android Perfetto 系列 7：MainThread 和
-    RenderThread
-    解读](/2025/08/02/Android-Perfetto-07-MainThread-And-RenderThread/){.archive-post-title}
--   [04/26]{.archive-post-date} [Android Perfetto 系列 6：为什么是
-    120Hz？高刷新率的优势与挑战](/2025/04/26/Android-Perfetto-06-Why-120Hz/){.archive-post-title}
--   [03/26]{.archive-post-date} [Android Perfetto 系列 5：Android App
-    基于 Choreographer
-    的渲染流程](/2025/03/26/Android-Perfetto-05-Chorergrapher/){.archive-post-title}
--   [02/08]{.archive-post-date} [Android Perfetto 系列
-    4：使用命令行在本地打开超大
-    Trace](/2025/02/08/Android-Perfetto-04-Open-Big-Trace-With-Command-Line/){.archive-post-title}
--   [02/08]{.archive-post-date} [Android ANR 系列 3 ：ANR
-    案例分享](/2025/02/08/Android-ANR-03-ANR-Case-Share/){.archive-post-title}
--   [02/08]{.archive-post-date} [Android ANR 系列 2 ：ANR 分析套路和关键
-    Log
-    介绍](/2025/02/08/Android-ANR-02-How-to-analysis-ANR/){.archive-post-title}
--   [02/08]{.archive-post-date} [Android ANR 系列 1 ：理解 Android ANR
-    设计思想](/2025/02/08/Android-ANR-01-ANR-Design/){.archive-post-title}
-
-::: {.archive-year}
-2024
-:::
-
--   [05/21]{.archive-post-date} [Android Perfetto 系列 3：熟悉 Perfetto
-    View](/2024/05/21/Android-Perfetto-03-how-to-analysis-perfetto/){.archive-post-title}
--   [05/21]{.archive-post-date} [Android Perfetto 系列 2：Perfetto Trace
-    抓取](/2024/05/21/Android-Perfetto-02-how-to-get-perfetto/){.archive-post-title}
--   [05/21]{.archive-post-date} [Android Perfetto 系列 1：Perfetto
-    工具简介](/2024/05/21/Android-Perfetto-01-What-is-perfetto/){.archive-post-title}
--   [03/27]{.archive-post-date} [Android Perfetto
-    系列目录](/2024/03/27/Android-Perfetto-101/){.archive-post-title}
--   [01/01]{.archive-post-date} [2023
-    年的方方面面](/2024/01/01/2023-review/){.archive-post-title}
-
-::: {.archive-year}
-2023
-:::
-
--   [10/15]{.archive-post-date} [The Performance Design Of
-    OS](/2023/10/15/the-performance-design-of-os-en/){.archive-post-title}
--   [08/21]{.archive-post-date} [OS
-    设计之性能设计](/2023/08/21/the-performance-design-of-os/){.archive-post-title}
--   [05/14]{.archive-post-date} [当 App
-    有了系统权限，真的可以为所欲为？](/2023/05/14/bad-android-app-with-system-permissions/){.archive-post-title}
-
-::: {.archive-year}
-2022
-:::
-
--   [03/27]{.archive-post-date} [The Performance 星球茶话会 -
-    第一期](/2022/03/27/the-performance-tea-part-01/){.archive-post-title}
--   [03/13]{.archive-post-date} [Systrace 线程 CPU 运行状态分析技巧 -
-    Sleep 和 Uninterruptible Sleep
-    篇](/2022/03/13/android-systrace-cpu-state-sleep/){.archive-post-title}
--   [03/13]{.archive-post-date} [Systrace 线程 CPU 运行状态分析技巧 -
-    Running
-    篇](/2022/03/13/android-systrace-cpu-state-running/){.archive-post-title}
--   [01/21]{.archive-post-date} [Systrace 线程 CPU 运行状态分析技巧 -
-    Runnable
-    篇](/2022/01/21/android-systrace-cpu-state-runnable/){.archive-post-title}
--   [01/07]{.archive-post-date} [Techniques, Philosophy, and Tools for
-    Android Performance
-    Optimization](/2022/01/07/Techniques-Philosophy-and-Tools-for-Android-Performance-Optimization/){.archive-post-title}
--   [01/07]{.archive-post-date} [Android
-    性能优化的术、道、器](/2022/01/07/The-Performace-1-Performance-Tools/){.archive-post-title}
--   [01/03]{.archive-post-date} [回顾
-    2021](/2022/01/03/2021-Review/){.archive-post-title}
-
-::: {.archive-year}
-2021
-:::
-
--   [10/27]{.archive-post-date} [一本讲 Android
-    流畅性的书，应该有什么内容？](/2021/10/27/if-i-write-a-book-about-performance/){.archive-post-title}
--   [10/26]{.archive-post-date} [Android 系统开发系列（1）：Android 12
-    源代码下载、编译和刷机](/2021/10/26/build-android-12/){.archive-post-title}
--   [09/13]{.archive-post-date} [Android Systrace 响应速度实战 3
-    ：响应速度延伸知识](/2021/09/13/android-systrace-Responsiveness-in-action-3/){.archive-post-title}
--   [09/13]{.archive-post-date} [Android Systrace 响应速度实战 2
-    ：响应速度实战分析-以启动速度为例](/2021/09/13/android-systrace-Responsiveness-in-action-2/){.archive-post-title}
--   [09/13]{.archive-post-date} [Android Systrace 响应速度实战 1
-    ：了解响应速度原理](/2021/09/13/android-systrace-Responsiveness-in-action-1/){.archive-post-title}
--   [04/24]{.archive-post-date} [Android Systrace 流畅性实战 3
-    ：卡顿分析过程中的一些疑问](/2021/04/24/android-systrace-smooth-in-action-3/){.archive-post-title}
--   [04/24]{.archive-post-date} [Android Systrace 流畅性实战 2
-    ：案例分析 - MIUI
-    桌面滑动卡顿分析](/2021/04/24/android-systrace-smooth-in-action-2/){.archive-post-title}
--   [04/24]{.archive-post-date} [Android Systrace 流畅性实战 1
-    ：了解卡顿原理](/2021/04/24/android-systrace-smooth-in-action-1/){.archive-post-title}
-
-::: {.archive-year}
-2020
-:::
-
--   [08/20]{.archive-post-date}
-    [华为手机刷微博体验更好？技术角度的一些分析和思考](/2020/08/20/weibo-imageload-opt-on-huawei/){.archive-post-title}
--   [05/26]{.archive-post-date} [一个「闰」字引发的事故 -
-    三星系统重启分析](/2020/05/26/samsung_crash/){.archive-post-title}
--   [05/07]{.archive-post-date} [Android App
-    链式唤醒分析](/2020/05/07/Android-App-Chain-Wakeup/){.archive-post-title}
--   [02/14]{.archive-post-date} [Android Systrace 基础知识 -
-    SurfaceFlinger
-    解读](/2020/02/14/Android-Systrace-SurfaceFlinger/){.archive-post-title}
--   [02/03]{.archive-post-date} [Android 开发者学习路线(2020
-    版本)](/2020/02/03/android-development-learning-path-2020-edition/){.archive-post-title}
--   [01/28]{.archive-post-date} [我的 2020
-    年读书单](/2020/01/28/2020-read/){.archive-post-title}
-
-::: {.archive-year}
-2019
-:::
-
--   [12/21]{.archive-post-date} [Android Systrace 基础知识 - CPU Info
-    解读](/2019/12/21/Android-Systrace-CPU/){.archive-post-title}
--   [12/15]{.archive-post-date} [Android Systrace 基础知识 - Triple
-    Buffer
-    解读](/2019/12/15/Android-Systrace-Triple-Buffer/){.archive-post-title}
--   [12/06]{.archive-post-date} [Android Systrace 基础知识 - Binder
-    和锁竞争解读](/2019/12/06/Android-Systrace-Binder/){.archive-post-title}
--   [12/01]{.archive-post-date} [「置顶」博客文章目录 +
-    个人项目](/2019/12/01/BlogMap/){.archive-post-title}
--   [12/01]{.archive-post-date} [Android Systrace 基础知识 - Vsync
-    解读](/2019/12/01/Android-Systrace-Vsync/){.archive-post-title}
--   [11/18]{.archive-post-date} [Android App
-    启动优化全记录](/2019/11/18/Android-App-Lunch-Optimize/){.archive-post-title}
--   [11/06]{.archive-post-date} [Android Systrace 基础知识 - MainThread
-    和 RenderThread
-    解读](/2019/11/06/Android-Systrace-MainThread-And-RenderThread/){.archive-post-title}
--   [11/04]{.archive-post-date} [Android Systrace 基础知识 - Input
-    解读](/2019/11/04/Android-Systrace-Input/){.archive-post-title}
--   [10/24]{.archive-post-date} [Android
-    中的"后台无效动画"行为分析](/2019/10/24/Android-Background-Animation/){.archive-post-title}
--   [10/22]{.archive-post-date} [Android 基于 Choreographer
-    的渲染机制详解](/2019/10/22/Android-Choreographer/){.archive-post-title}
--   [09/18]{.archive-post-date} [Android 中的卡顿丢帧原因概述 -
-    低内存篇](/2019/09/18/Android-Jank-Due-To-Low-Memory/){.archive-post-title}
--   [09/17]{.archive-post-date} [Android
-    桌面被杀问题分析案例](/2019/09/17/Android-Kill-Background-App-Debug/){.archive-post-title}
--   [09/05]{.archive-post-date} [Android 中的卡顿丢帧原因概述 -
-    应用篇](/2019/09/05/Android-Jank-Due-To-App/){.archive-post-title}
--   [09/05]{.archive-post-date} [Android 中的卡顿丢帧原因概述 -
-    系统篇](/2019/09/05/Android-Jank-Due-To-System/){.archive-post-title}
--   [09/05]{.archive-post-date} [Android 中的卡顿丢帧原因概述 -
-    方法论](/2019/09/05/Android-Jank-Debug/){.archive-post-title}
--   [09/01]{.archive-post-date} [Android 中的 Activity Launch Mode
-    详解](/2019/09/01/Android-Activity-Lunch-Mode/){.archive-post-title}
--   [07/27]{.archive-post-date} [Android 中的 Hardware Layer
-    详解](/2019/07/27/Android-Hardware-Layer/){.archive-post-title}
--   [07/23]{.archive-post-date} [Android Systrace 基础知识 \-- 分析
-    Systrace
-    预备知识](/2019/07/23/Android-Systrace-Pre/){.archive-post-title}
--   [06/29]{.archive-post-date} [Android Systrace 基础知识 -
-    SystemServer
-    解读](/2019/06/29/Android-Systrace-SystemServer/){.archive-post-title}
--   [05/28]{.archive-post-date} [Android Systrace 基础知识 \-- Systrace
-    简介](/2019/05/28/Android-Systrace-About/){.archive-post-title}
--   [05/27]{.archive-post-date} [Android Systrace 基础知识 \-- Why 60
-    fps ？](/2019/05/27/why-60-fps/){.archive-post-title}
--   [05/26]{.archive-post-date} [Android Systrace \--
-    系列文章目录](/2019/05/26/Android_Systrace_0/){.archive-post-title}
--   [05/15]{.archive-post-date} [Android 新的流畅体验，90Hz
-    漫谈](/2019/05/15/90hz-on-android/){.archive-post-title}
--   [04/07]{.archive-post-date} [利器 -
-    高效工具推荐](/2019/04/07/liqi/){.archive-post-title}
--   [01/21]{.archive-post-date} [Android
-    无障碍服务导致的整机卡顿案例分析](/2019/01/21/android-performance-case-jank-accessbility/){.archive-post-title}
--   [01/12]{.archive-post-date} [2018 年度好物推荐 -
-    给辛勤工作的自己一点奖励](/2019/01/12/recommend-of-2018/){.archive-post-title}
-
-::: {.archive-year}
-2018
-:::
-
--   [11/01]{.archive-post-date} [Android
-    系统开发源码环境搭建](/2018/11/01/android-system-develop-0/){.archive-post-title}
--   [10/25]{.archive-post-date}
-    [陆奇：除了好代码，工程师怎样才算优秀？](/2018/10/25/How-do-engineers-count-well/){.archive-post-title}
--   [10/01]{.archive-post-date}
-    [程序员的修炼-08-阅读之美](/2018/10/01/how-to-stop-sucking-and-be-awesome-instead-8/){.archive-post-title}
--   [09/30]{.archive-post-date}
-    [程序员的修炼-07-游戏与编程](/2018/09/30/how-to-stop-sucking-and-be-awesome-instead-7/){.archive-post-title}
--   [09/29]{.archive-post-date}
-    [程序员的修炼-06-互联网那些事](/2018/09/29/how-to-stop-sucking-and-be-awesome-instead-6/){.archive-post-title}
--   [09/28]{.archive-post-date}
-    [程序员的修炼-05-了解你的用户](/2018/09/28/how-to-stop-sucking-and-be-awesome-instead-5/){.archive-post-title}
--   [09/27]{.archive-post-date}
-    [程序员的修炼-04-关于测试的一些思考](/2018/09/27/how-to-stop-sucking-and-be-awesome-instead-4/){.archive-post-title}
--   [09/26]{.archive-post-date} [程序员的修炼-03-Web
-    设计原则](/2018/09/26/how-to-stop-sucking-and-be-awesome-instead-3/){.archive-post-title}
--   [09/20]{.archive-post-date}
-    [程序员的修炼-02-编程之道](/2018/09/20/how-to-stop-sucking-and-be-awesome-instead-2/){.archive-post-title}
--   [09/19]{.archive-post-date}
-    [程序员的修炼-01-绝地反击之术](/2018/09/19/how-to-stop-sucking-and-be-awesome-instead-1/){.archive-post-title}
--   [09/13]{.archive-post-date} [Android
-    系统不释放内存吗？](/2018/09/13/android-memory/){.archive-post-title}
--   [08/13]{.archive-post-date} [关于 Android
-    系统流畅性的一些思考](/2018/08/13/Some-Thoughts-on-the-Fluency-of-Android/){.archive-post-title}
--   [05/20]{.archive-post-date} [知乎 救救你的
-    StartingWindow](/2018/05/20/zhihu-startingwindow/){.archive-post-title}
--   [05/07]{.archive-post-date} [「置顶」Android
-    性能优化必知必会](/2018/05/07/Android-performance-optimization-skills-and-tools/){.archive-post-title}
--   [01/06]{.archive-post-date} [2017 年度好物推荐 -
-    给辛勤工作的自己一点奖励](/2018/01/06/2017%E5%B9%B4%E5%BA%A6%E6%9C%80%E6%8E%A8%E8%8D%90/){.archive-post-title}
-
-::: {.archive-year}
-2017
-:::
-
--   [04/23]{.archive-post-date}
-    [2017](/2017/04/23/About-work/){.archive-post-title}
-
-::: {.archive-year}
-2016
-:::
-
--   [04/05]{.archive-post-date} [Android Bottom navigation
-    规范二：样式、行为与规格](/2016/04/05/android-bottom-bar-2/){.archive-post-title}
--   [04/05]{.archive-post-date} [Android Bottom Navigation
-    规范一：使用方法](/2016/04/05/android-bottom-bar-1/){.archive-post-title}
-
-::: {.archive-year}
-2015
-:::
-
--   [12/31]{.archive-post-date} [Android 中如何计算 App
-    的启动时间？](/2015/12/31/How-to-calculation-android-app-lunch-time/){.archive-post-title}
--   [12/29]{.archive-post-date} [Android 应用启动优化:一种 DelayLoad
-    的实现和原理(下篇)](/2015/12/29/Android%E5%BA%94%E7%94%A8%E5%90%AF%E5%8A%A8%E4%BC%98%E5%8C%96-%E4%B8%80%E7%A7%8DDelayLoad%E7%9A%84%E5%AE%9E%E7%8E%B0%E5%92%8C%E5%8E%9F%E7%90%86-%E4%B8%8B%E7%AF%87/){.archive-post-title}
--   [11/18]{.archive-post-date} [Android 应用启动优化 - 一种 DelayLoad
-    的实现和原理(上篇)](/2015/11/18/Android-app-lunch-optimize-delay-load/){.archive-post-title}
--   [08/12]{.archive-post-date} [Android hwui 中 RenderThread
-    工作流程](/2015/08/12/AndroidL-hwui-RenderThread-workflow/){.archive-post-title}
--   [08/05]{.archive-post-date} [Java7 HashMap
-    源码分析](/2015/08/05/HashMap/){.archive-post-title}
--   [07/20]{.archive-post-date} [Android 代码内存优化建议 - OnTrimMemory
-    优化](/2015/07/20/Android-Performance-Memory-onTrimMemory/){.archive-post-title}
--   [07/20]{.archive-post-date} [Android 代码内存优化建议 - Android
-    资源篇](/2015/07/20/Android-Performance-Memory-AndroidResource/){.archive-post-title}
--   [07/20]{.archive-post-date} [Android 代码内存优化建议 - Android
-    官方篇](/2015/07/20/Android-Performance-Memory-Google/){.archive-post-title}
--   [07/20]{.archive-post-date} [Android 代码内存优化建议 - Java
-    官方篇](/2015/07/20/Android-Performance-Memory-Java/){.archive-post-title}
--   [05/29]{.archive-post-date} [Nexus6 with Android M
-    开启多窗口模式](/2015/05/29/Nexus6-with-Android-M/){.archive-post-title}
--   [05/06]{.archive-post-date} [细说 Java
-    单例模式](/2015/05/06/Java-Singleton/){.archive-post-title}
--   [04/19]{.archive-post-date} [Android 性能优化典范 - Profile GPU
-    Rendering](/2015/04/19/Android-Performance-Patterns-4/){.archive-post-title}
--   [04/19]{.archive-post-date} [Android 性能优化典范 - Understanding
-    VSYNC](/2015/04/19/Android-Performance-Patterns-3/){.archive-post-title}
--   [04/19]{.archive-post-date} [Android 性能优化典范之 Understanding
-    Overdraw](/2015/04/19/Android-Performance-Patterns-2/){.archive-post-title}
--   [04/19]{.archive-post-date} [Android 性能优化典范 - Render
-    Performance](/2015/04/19/Android-Performance-Patterns-1/){.archive-post-title}
--   [04/19]{.archive-post-date} [Android
-    性能优化典范综述](/2015/04/19/Android-Performance-Patterns/){.archive-post-title}
--   [04/11]{.archive-post-date} [Android 内存优化之三 - 打开 MAT 中的
-    Bitmap
-    原图](/2015/04/11/AndroidMemory-Open-Bitmap-Object-In-MAT/){.archive-post-title}
--   [04/11]{.archive-post-date} [Android 内存优化之二 -
-    MAT使用进阶](/2015/04/11/AndroidMemory-Usage-Of-MAT-Pro/){.archive-post-title}
--   [04/11]{.archive-post-date} [Android 内存优化(1) - MAT
-    使用入门](/2015/04/11/AndroidMemory-Usage-Of-MAT/){.archive-post-title}
--   [03/31]{.archive-post-date}
-    [Android性能优化后续](/2015/03/31/android-performance-case-study-follow-up/){.archive-post-title}
--   [03/15]{.archive-post-date} [Android 小技巧 -
-    5](/2015/03/15/android-tips-round-up-5/){.archive-post-title}
--   [03/15]{.archive-post-date} [Android 小技巧 -
-    4](/2015/03/15/android-tips-round-up-4/){.archive-post-title}
--   [03/15]{.archive-post-date} [Android 小技巧
-    -3](/2015/03/15/android-tips-round-up-3/){.archive-post-title}
--   [02/04]{.archive-post-date} [为 Nexus5 编译 AndroidL
-    固件](/2015/02/04/build-rom-for-nexus5/){.archive-post-title}
--   [01/30]{.archive-post-date} [Android 性能优化之 Systrace
-    工具介绍(一)](/2015/01/30/android-performance-tools-systrace-1/){.archive-post-title}
--   [01/16]{.archive-post-date} [使用 Android Studio 查看 Android
-    Lollipop
-    源码](/2015/01/16/view-android-source-code-with-androidstudio/){.archive-post-title}
--   [01/13]{.archive-post-date} [Android 性能优化之过渡绘制 -
-    实战篇](/2015/01/13/android-performance-optimization-overdraw-2/){.archive-post-title}
-
-::: {.archive-year}
-2014
-:::
-
--   [10/20]{.archive-post-date} [Android 性能优化之过渡绘制 -
-    理论篇](/2014/10/20/android-performance-optimization-overdraw-1/){.archive-post-title}
--   [06/03]{.archive-post-date} [Android 小技巧 -
-    如何让EditText不自动获取焦点](/2014/06/03/android-edittext-do-not-auto-get-focus/){.archive-post-title}
--   [05/31]{.archive-post-date} [Android 小技巧
-    -2](/2014/05/31/android-tips-round-up-2/){.archive-post-title}
--   [05/28]{.archive-post-date} [Android 小技巧 -
-    1](/2014/05/28/android-tips-round-up-1/){.archive-post-title}
--   [05/02]{.archive-post-date} [Android Tools -
-    Log2File](/2014/05/02/android_log_to_file/){.archive-post-title}
--   [04/01]{.archive-post-date} [Android
-    Service：开发自己的通知中心(2):辅助性服务实战](/2014/04/01/android-service-build-your-own-notification-servers-app/){.archive-post-title}
--   [03/25]{.archive-post-date} [Android:Ubuntu 下执行 Adb
-    命令找不到设备](/2014/03/25/ubuntu-adb-can-not-find-devices/){.archive-post-title}
--   [03/17]{.archive-post-date} [Android
-    Service：开发自己的通知中心(1):辅助性服务介绍](/2014/03/17/android-build-your-own-android-notification-service-app/){.archive-post-title}
-:::
-:::
-
-::: {.sidebar-panel-tags}
-::: {.sidebar-tags-name}
-[ []{.iconfont-archer} 年度推荐 ]{.sidebar-tag-name tags="年度推荐"} [
-[]{.iconfont-archer} Startup ]{.sidebar-tag-name tags="Startup"} [
-[]{.iconfont-archer} Memory ]{.sidebar-tag-name tags="Memory"} [
-[]{.iconfont-archer} Android ]{.sidebar-tag-name tags="Android"} [
-[]{.iconfont-archer} Jank ]{.sidebar-tag-name tags="Jank"} [
-[]{.iconfont-archer} Perfetto ]{.sidebar-tag-name tags="Perfetto"} [
-[]{.iconfont-archer} Systrace ]{.sidebar-tag-name tags="Systrace"} [
-[]{.iconfont-archer} 年终总结 ]{.sidebar-tag-name tags="年终总结"} [
-[]{.iconfont-archer} 知识星球 ]{.sidebar-tag-name tags="知识星球"} [
-[]{.iconfont-archer} Performance ]{.sidebar-tag-name
-tags="Performance"} [ []{.iconfont-archer} AOSP ]{.sidebar-tag-name
-tags="AOSP"} [ []{.iconfont-archer} Framework ]{.sidebar-tag-name
-tags="Framework"} [ []{.iconfont-archer} AIW ]{.sidebar-tag-name
-tags="AIW"} [ []{.iconfont-archer} Open Source ]{.sidebar-tag-name
-tags="Open Source"} [ []{.iconfont-archer} 随笔 ]{.sidebar-tag-name
-tags="随笔"} [ []{.iconfont-archer} Agent OS ]{.sidebar-tag-name
-tags="Agent OS"} [ []{.iconfont-archer} AI ]{.sidebar-tag-name
-tags="AI"} [ []{.iconfont-archer} OpenAI ]{.sidebar-tag-name
-tags="OpenAI"} [ []{.iconfont-archer} Mobile OS ]{.sidebar-tag-name
-tags="Mobile OS"} [ []{.iconfont-archer} ANR ]{.sidebar-tag-name
-tags="ANR"} [ []{.iconfont-archer} RenderThread ]{.sidebar-tag-name
-tags="RenderThread"} [ []{.iconfont-archer} Tools ]{.sidebar-tag-name
-tags="Tools"} [ []{.iconfont-archer} Linux ]{.sidebar-tag-name
-tags="Linux"} [ []{.iconfont-archer} Java ]{.sidebar-tag-name
-tags="Java"} [ []{.iconfont-archer} BlastBufferQueue
-]{.sidebar-tag-name tags="BlastBufferQueue"} [ []{.iconfont-archer}
-性能优化 ]{.sidebar-tag-name tags="性能优化"} [ []{.iconfont-archer}
-线程优化 ]{.sidebar-tag-name tags="线程优化"} [ []{.iconfont-archer}
-卡顿优化 ]{.sidebar-tag-name tags="卡顿优化"} [ []{.iconfont-archer}
-电量优化 ]{.sidebar-tag-name tags="电量优化"} [ []{.iconfont-archer}
-ANR分析 ]{.sidebar-tag-name tags="ANR分析"} [ []{.iconfont-archer}
-页面响应 ]{.sidebar-tag-name tags="页面响应"} [ []{.iconfont-archer}
-Binder ]{.sidebar-tag-name tags="Binder"} [ []{.iconfont-archer} SQL
-]{.sidebar-tag-name tags="SQL"} [ []{.iconfont-archer} TraceProcessor
-]{.sidebar-tag-name tags="TraceProcessor"} [ []{.iconfont-archer} Trace
-]{.sidebar-tag-name tags="Trace"} [ []{.iconfont-archer} DataFlow
-]{.sidebar-tag-name tags="DataFlow"} [ []{.iconfont-archer} SDK
-]{.sidebar-tag-name tags="SDK"} [ []{.iconfont-archer} TraceEvent
-]{.sidebar-tag-name tags="TraceEvent"} [ []{.iconfont-archer} heapprofd
-]{.sidebar-tag-name tags="heapprofd"} [ []{.iconfont-archer} Field
-]{.sidebar-tag-name tags="Field"} [ []{.iconfont-archer} GPU
-]{.sidebar-tag-name tags="GPU"} [ []{.iconfont-archer} Power
-]{.sidebar-tag-name tags="Power"} [ []{.iconfont-archer} MAT
-]{.sidebar-tag-name tags="MAT"} [ []{.iconfont-archer} Camera
-]{.sidebar-tag-name tags="Camera"} [ []{.iconfont-archer} Audio
-]{.sidebar-tag-name tags="Audio"} [ []{.iconfont-archer} Input
-]{.sidebar-tag-name tags="Input"} [ []{.iconfont-archer} Latency
-]{.sidebar-tag-name tags="Latency"} [ []{.iconfont-archer} DelayLoad
-]{.sidebar-tag-name tags="DelayLoad"} [ []{.iconfont-archer} HashMap
-]{.sidebar-tag-name tags="HashMap"} [ []{.iconfont-archer} 程序员
-]{.sidebar-tag-name tags="程序员"} [ []{.iconfont-archer} Nexus
-]{.sidebar-tag-name tags="Nexus"} [ []{.iconfont-archer} Singleton
-]{.sidebar-tag-name tags="Singleton"} [ []{.iconfont-archer} OpenClaw
-]{.sidebar-tag-name tags="OpenClaw"} [ []{.iconfont-archer} AI Agent
-]{.sidebar-tag-name tags="AI Agent"} [ []{.iconfont-archer} 效率工具
-]{.sidebar-tag-name tags="效率工具"} [ []{.iconfont-archer} 本地模型
-]{.sidebar-tag-name tags="本地模型"} [ []{.iconfont-archer}
-SmartPerfetto ]{.sidebar-tag-name tags="SmartPerfetto"} [
-[]{.iconfont-archer} MCP ]{.sidebar-tag-name tags="MCP"} [
-[]{.iconfont-archer} Android Performance ]{.sidebar-tag-name
-tags="Android Performance"} [ []{.iconfont-archer} Gracker
-]{.sidebar-tag-name tags="Gracker"} [ []{.iconfont-archer} 设计规范
-]{.sidebar-tag-name tags="设计规范"} [ []{.iconfont-archer} Compose
-]{.sidebar-tag-name tags="Compose"} [ []{.iconfont-archer} Kotlin
-]{.sidebar-tag-name tags="Kotlin"} [ []{.iconfont-archer} Process
-]{.sidebar-tag-name tags="Process"} [ []{.iconfont-archer} 卡顿
-]{.sidebar-tag-name tags="卡顿"} [ []{.iconfont-archer} 读书笔记
-]{.sidebar-tag-name tags="读书笔记"} [ []{.iconfont-archer}
-程序员的修炼 ]{.sidebar-tag-name tags="程序员的修炼"} [
-[]{.iconfont-archer} 设计原则 ]{.sidebar-tag-name tags="设计原则"} [
-[]{.iconfont-archer} 测试 ]{.sidebar-tag-name tags="测试"} [
-[]{.iconfont-archer} 了解你的用户 ]{.sidebar-tag-name
-tags="了解你的用户"} [ []{.iconfont-archer} 互联网那些事
-]{.sidebar-tag-name tags="互联网那些事"} [ []{.iconfont-archer}
-游戏与编程 ]{.sidebar-tag-name tags="游戏与编程"} [
-[]{.iconfont-archer} 阅读之美 ]{.sidebar-tag-name tags="阅读之美"} [
-[]{.iconfont-archer} 利器 ]{.sidebar-tag-name tags="利器"} [
-[]{.iconfont-archer} iOS ]{.sidebar-tag-name tags="iOS"} [
-[]{.iconfont-archer} Design ]{.sidebar-tag-name tags="Design"} [
-[]{.iconfont-archer} Smooth ]{.sidebar-tag-name tags="Smooth"} [
-[]{.iconfont-archer} 体验优化 ]{.sidebar-tag-name tags="体验优化"} [
-[]{.iconfont-archer} 用户体验 ]{.sidebar-tag-name tags="用户体验"}
-:::
-
-::: {.iconfont-archer .sidebar-tags-empty}
-
-:::
-
-::: {.tag-load-fail style="display: none; color: #ccc; font-size: 0.6rem;"}
-缺失模块，请参考主题文档进行安装配置：https://github.com/fi3ework/hexo-theme-archer\#%E5%AE%89%E8%A3%85%E4%B8%BB%E9%A2%98
-:::
-
-::: {.sidebar-tags-list}
-:::
-:::
-
-::: {.sidebar-panel-categories}
-::: {.sidebar-categories-name}
-[ []{.iconfont-archer} 随笔 ]{.sidebar-category-name categories="随笔"}
-[ []{.iconfont-archer} 读书笔记 ]{.sidebar-category-name
-categories="读书笔记"} [ []{.iconfont-archer} Android
-]{.sidebar-category-name categories="Android"} [ []{.iconfont-archer}
-AI ]{.sidebar-category-name categories="AI"} [ []{.iconfont-archer}
-Java ]{.sidebar-category-name categories="Java"} [ []{.iconfont-archer}
-Android性能优化 ]{.sidebar-category-name categories="Android性能优化"} [
-[]{.iconfont-archer} SmartPerfetto ]{.sidebar-category-name
-categories="SmartPerfetto"} [ []{.iconfont-archer} 个人页
-]{.sidebar-category-name categories="个人页"}
-:::
-
-::: {.iconfont-archer .sidebar-categories-empty}
-
-:::
-
-::: {.sidebar-categories-list}
-:::
-:::
-:::
-:::
-
-::: {.site-search .site-search-loading .local-search-shell}
-::: {.algolia-popup .popup .local-search-popup role="dialog" aria-modal="true" aria-label="Search posts"}
-::: {.algolia-search .local-search-header}
-::: {.algolia-search-input-icon}
-**
-:::
-
-::: {.algolia-search-input .local-search-input}
-:::
-
-**
-:::
-
-::: {.algolia-results .local-search-results}
-::: {#local-search-config path="/search.xml" per-page="10" empty="没有找到与「${query}」相关的文章" stats="找到 ${hits} 个结果" data-loading="正在加载搜索索引..." error="搜索索引加载失败，请稍后重试"}
-:::
-
-::: {#local-search-stats .algolia-stats}
-:::
-
-::: {#local-search-hits}
-:::
-:::
-:::
-:::
